@@ -71,7 +71,7 @@
   main { max-width: 1120px; margin: 0 auto; padding: 28px 24px; }
 
   /* ── サマリー ── */
-  .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
+  .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
   .summary-card {
     background: linear-gradient(135deg, var(--navy) 0%, var(--navy2) 100%);
     color: #fff; border-radius: var(--radius); padding: 22px 24px;
@@ -252,7 +252,7 @@
 
   /* ── レスポンシブ ── */
   @media (max-width: 700px) {
-    .summary-grid { grid-template-columns: 1fr; }
+    .summary-grid { grid-template-columns: 1fr 1fr; }
     .filter-row { grid-template-columns: 1fr 1fr; }
     .header-actions .btn-ghost { display: none; }
     .header-brand .title { font-size: 14px; }
@@ -310,9 +310,14 @@
         <div class="s-sub">社 登録済み</div>
       </div>
       <div class="summary-card">
-        <div class="s-label">業務種別数</div>
+        <div class="s-label">業務数</div>
         <div class="s-value" id="sumTasks">0</div>
         <div class="s-sub">種 登録済み</div>
+      </div>
+      <div class="summary-card" style="border:1.5px solid rgba(245,158,11,.3);">
+        <div class="s-label" style="color:#fbbf24;">今月の支払合計</div>
+        <div class="s-value" id="sumThisMonth" style="color:#f59e0b;">¥0</div>
+        <div class="s-sub" id="sumThisMonthCount">0 件</div>
       </div>
     </div>
 
@@ -708,6 +713,11 @@ function updateSummary() {
   document.getElementById('sumCount').textContent = payments.length + ' 件';
   document.getElementById('sumVendors').textContent = vendors.length;
   document.getElementById('sumTasks').textContent = tasks.length;
+  const thisMonth = new Date().toISOString().slice(0, 7);
+  const thisMonthPayments = payments.filter(p => ym(p.payment_date) === thisMonth);
+  const thisMonthTotal = thisMonthPayments.reduce((s, p) => s + p.amount, 0);
+  document.getElementById('sumThisMonth').textContent = '¥' + fmt(thisMonthTotal);
+  document.getElementById('sumThisMonthCount').textContent = thisMonthPayments.length + ' 件';
 }
 
 function renderList(filtered) {
