@@ -210,6 +210,8 @@
   /* ── 支払済ボタン・編集ボタン（一覧用） ── */
   .btn-paid { background: #fffbeb; color: #b45309; border: 1.5px solid #fcd34d; border-radius: 6px; padding: 4px 9px; font-size: 11px; font-weight: 700; cursor: pointer; font-family: inherit; transition: all .15s; white-space: nowrap; }
   .btn-paid:hover { background: #fef3c7; border-color: #f59e0b; }
+  .btn-unpaid { background: #d1fae5; color: #065f46; border: 1.5px solid #6ee7b7; border-radius: 6px; padding: 4px 9px; font-size: 11px; font-weight: 700; cursor: pointer; font-family: inherit; transition: all .15s; white-space: nowrap; }
+  .btn-unpaid:hover { background: #a7f3d0; border-color: #10b981; }
   .btn-edit-pay { background: #eff6ff; color: var(--blue2); border: 1.5px solid #bfdbfe; border-radius: 6px; padding: 4px 10px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; transition: all .15s; }
   .btn-edit-pay:hover { background: #dbeafe; }
 
@@ -730,7 +732,7 @@ function renderList(filtered) {
   }
   tbody.innerHTML = data.map(p => {
     const isPaid = !!p.paid;
-    const rowStyle = isPaid ? 'opacity:.55;' : '';
+    const rowStyle = isPaid ? 'opacity:.6;' : '';
     const amountStyle = isPaid ? 'font-family:\'DM Mono\',monospace;font-weight:700;text-align:right;color:var(--muted);text-decoration:line-through;' : 'font-family:\'DM Mono\',monospace;font-weight:700;color:var(--blue2);text-align:right;';
     return `
     <tr style="${rowStyle}">
@@ -741,12 +743,12 @@ function renderList(filtered) {
       <td style="${amountStyle}">${fmt(p.amount)}</td>
       <td style="text-align:center">
         ${isPaid
-          ? '<span class="badge" style="background:#d1fae5;color:#065f46;">✓ 支払済</span>'
+          ? `<button class="btn-unpaid" onclick="togglePaid('${p.id}', false)">✓ 支払済</button>`
           : `<button class="btn-paid" onclick="togglePaid('${p.id}', true)">支払済にする</button>`}
       </td>
       <td>
         <div style="display:flex;gap:5px;justify-content:flex-end;">
-          ${isPaid ? '' : `<button class="btn-edit-pay" onclick="openEditPayment('${p.id}')">編集</button>`}
+          <button class="btn-edit-pay" onclick="openEditPayment('${p.id}')">編集</button>
           <button class="btn-danger" onclick="confirmDelete('${p.id}')">削除</button>
         </div>
       </td>
