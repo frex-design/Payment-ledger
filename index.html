@@ -234,6 +234,7 @@
     color: #fff; z-index: 300; display: none;
     box-shadow: 0 6px 24px rgba(0,0,0,.2);
     animation: slideUp .25s ease;
+    max-width: 420px; word-break: break-all; line-height: 1.5;
   }
   @keyframes slideUp { from { transform: translateY(16px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
   #toast.success { background: var(--success); }
@@ -281,29 +282,13 @@
     <div class="header-actions">
       <button class="btn btn-ghost" onclick="openModal('vendorModal')">協力会社管理</button>
       <button class="btn btn-ghost" onclick="openModal('taskModal')">業務管理</button>
+      <button class="btn btn-ghost" style="border-color:rgba(255,255,255,.15);color:#94a3b8;font-size:12px;" onclick="openConfigBox()">⚙ 接続設定</button>
       <button class="btn btn-primary" onclick="openModal('paymentModal')">＋ 支払い登録</button>
     </div>
   </div>
 </header>
 
 <main>
-  <!-- Supabase設定 -->
-  <div class="config-box" id="configBox">
-    <h3>⚙️ Supabase 接続設定（初回のみ）</h3>
-    <div class="config-row">
-      <div>
-        <label>Project URL</label>
-        <input type="text" id="cfgUrl" placeholder="https://xxxxxxxx.supabase.co">
-      </div>
-      <div>
-        <label>Anon Key</label>
-        <input type="text" id="cfgKey" placeholder="eyJxxxxxxxxx...">
-      </div>
-    </div>
-    <button class="btn btn-primary btn-sm" onclick="saveConfig()">接続して開始</button>
-    <div id="configStatus"></div>
-  </div>
-
   <!-- ローディング -->
   <div id="loading" style="display:none">
     <div class="spinner"></div>
@@ -430,6 +415,33 @@
     </div>
   </div>
 </main>
+
+<!-- ── 接続設定モーダル ── -->
+<div class="overlay" id="configModal">
+  <div class="modal" style="width:520px;">
+    <div class="modal-header">
+      <h2>⚙️ Supabase 接続設定</h2>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:var(--muted);line-height:1.7;margin-bottom:4px;">
+        Supabaseダッシュボードの <strong>Settings → API</strong> から<br>
+        「Project URL」と「anon public key」をコピーして貼り付けてください。
+      </p>
+      <div>
+        <label class="form-label">Project URL</label>
+        <input type="text" id="cfgUrl" placeholder="https://xxxxxxxx.supabase.co">
+      </div>
+      <div>
+        <label class="form-label">Anon Key（anon public）</label>
+        <input type="text" id="cfgKey" placeholder="eyJxxxxxxxxx...">
+      </div>
+      <div id="configStatus" style="font-size:12px;color:var(--danger);margin-top:-8px;"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" onclick="saveConfig()">接続して開始</button>
+    </div>
+  </div>
+</div>
 
 <!-- ── 支払い登録モーダル ── -->
 <div class="overlay" id="paymentModal" onclick="overlayClick(event,'paymentModal')">
@@ -617,16 +629,29 @@ let pendingDeleteId = null;
 async function saveConfig() {
   const url = document.getElementById('cfgUrl').value.trim();
   const key = document.getElementById('cfgKey').value.trim();
-  if (!url || !key) { showToast('URLとKeyを入力してください', 'error'); return; }
+  if (!url || !key) {
+    document.getElementById('configStatus').textContent = 'URLとKeyを両方入力してください';
+    return;
+  }
+  document.getElementById('configStatus').textContent = '';
   localStorage.setItem('sb_url', url);
   localStorage.setItem('sb_key', key);
   initSupabase(url, key);
 }
 
+function openConfigBox() {
+  const url = localStorage.getItem('sb_url') || '';
+  const key = localStorage.getItem('sb_key') || '';
+  document.getElementById('cfgUrl').value = url;
+  document.getElementById('cfgKey').value = key;
+  document.getElementById('configStatus').textContent = '';
+  openModal('configModal');
+}
+
 function initSupabase(url, key) {
   try {
     sb = supabase.createClient(url, key);
-    document.getElementById('configBox').style.display = 'none';
+    closeModal('configModal');
     loadAll();
   } catch(e) {
     document.getElementById('configStatus').textContent = '接続エラー: ' + e.message;
@@ -642,6 +667,8 @@ window.addEventListener('DOMContentLoaded', () => {
     document.getElementById('cfgUrl').value = url;
     document.getElementById('cfgKey').value = key;
     initSupabase(url, key);
+  } else {
+    openModal('configModal');
   }
 });
 
@@ -1044,14 +1071,14 @@ async function addVendor() {
   const name = document.getElementById('newVendorName').value.trim();
   if (!name) return;
   const { error } = await sb.from('vendors').insert({ name });
-  if (error) { showToast('追加に失敗しました', 'error'); return; }
+  if (error) { showToast('追加に失敗: ' + error.message, 'error'); return; }
   document.getElementById('newVendorName').value = '';
   showToast('協力会社を追加しました');
   await loadAll();
 }
 async function deleteVendor(id) {
   const { error } = await sb.from('vendors').delete().eq('id', id);
-  if (error) { showToast('削除できません（支払い記録あり）', 'error'); return; }
+  if (error) { showToast('削除できません: ' + error.message, 'error'); return; }
   showToast('削除しました');
   await loadAll();
 }
@@ -1059,14 +1086,14 @@ async function addTask() {
   const name = document.getElementById('newTaskName').value.trim();
   if (!name) return;
   const { error } = await sb.from('tasks').insert({ name });
-  if (error) { showToast('追加に失敗しました', 'error'); return; }
+  if (error) { showToast('追加に失敗: ' + error.message, 'error'); return; }
   document.getElementById('newTaskName').value = '';
   showToast('業務を追加しました');
   await loadAll();
 }
 async function deleteTask(id) {
   const { error } = await sb.from('tasks').delete().eq('id', id);
-  if (error) { showToast('削除できません（支払い記録あり）', 'error'); return; }
+  if (error) { showToast('削除できません: ' + error.message, 'error'); return; }
   showToast('削除しました');
   await loadAll();
 }
@@ -1174,7 +1201,7 @@ function showToast(msg, type = 'success') {
   el.className = type;
   el.style.display = 'block';
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { el.style.display = 'none'; }, 3000);
+  toastTimer = setTimeout(() => { el.style.display = 'none'; }, type === 'error' ? 8000 : 3000);
 }
 </script>
 </body>
