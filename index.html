@@ -304,10 +304,9 @@
     <div class="sub">for FRe:x Design inc.</div>
   </div>
   <button class="nav-item" data-view="dash"   aria-current="page"><span class="ico">▦</span>ダッシュボード</button>
-  <button class="nav-item" data-view="list"   ><span class="ico">≡</span>支払い一覧</button>
+  <button class="nav-item" data-view="month"  ><span class="ico">▥</span>支払い月ごと</button>
   <button class="nav-item" data-view="vendor" ><span class="ico">▤</span>外注会社ごと</button>
   <button class="nav-item" data-view="job"    ><span class="ico">▣</span>業務ごと</button>
-  <button class="nav-item" data-view="month"  ><span class="ico">▥</span>支払い月ごと</button>
   <button class="nav-item" data-view="data"   ><span class="ico">↓</span>データ管理</button>
   <div class="nav-gap"></div>
   <div class="side-foot">
@@ -740,40 +739,78 @@ function fyChartHTML(all) {
   const niceMax = empty ? 1 : niceCeil(rawMax);
   const fyTotal = data.reduce((a, d) => a + d.total, 0);
 
-  const W = 720, H = 260, ml = 60, mr = 18, mt = 18, mb = 30;
+  const W = 760, H = 288, ml = 64, mr = 22, mt = 28, mb = 34;
   const pw = W - ml - mr, ph = H - mt - mb;
   const xAt = i => ml + pw * i / 11;
   const yAt = v => mt + ph * (1 - v / niceMax);
+  const y0 = yAt(0);
 
+  // 横グリッド（0は実線・他は破線）＋Yラベル
   let grid = '';
   (empty ? [0] : [0, niceMax / 2, niceMax]).forEach(v => {
     const y = yAt(v);
-    grid += '<line x1="' + ml + '" y1="' + y.toFixed(1) + '" x2="' + (W - mr) + '" y2="' + y.toFixed(1) + '" style="stroke:var(--line)" stroke-width="1"/>' +
-      '<text x="' + (ml - 8) + '" y="' + (y + 4).toFixed(1) + '" text-anchor="end" style="fill:var(--text-muted)" font-size="11">' + yenShort(v) + '</text>';
+    const dash = v === 0 ? '' : ' stroke-dasharray="2 6"';
+    grid += '<line x1="' + ml + '" y1="' + y.toFixed(1) + '" x2="' + (W - mr) + '" y2="' + y.toFixed(1) + '" style="stroke:var(--line)" stroke-width="1"' + dash + '/>' +
+      '<text x="' + (ml - 10) + '" y="' + (y + 4).toFixed(1) + '" text-anchor="end" style="fill:var(--text-muted)" font-size="11.5">' + yenShort(v) + '</text>';
   });
 
+  // Xラベル（月）
   let xlab = '';
   data.forEach((d, i) => {
-    xlab += '<text x="' + xAt(i).toFixed(1) + '" y="' + (H - 10) + '" text-anchor="middle" style="fill:var(--text-muted)" font-size="11">' + d.m + '月</text>';
+    xlab += '<text x="' + xAt(i).toFixed(1) + '" y="' + (H - 12) + '" text-anchor="middle" style="fill:var(--text-muted)" font-size="11.5">' + d.m + '月</text>';
   });
 
-  const pts = data.map((d, i) => xAt(i).toFixed(1) + ',' + yAt(d.total).toFixed(1));
-  const area = '<polygon points="' + (ml + ',' + yAt(0).toFixed(1) + ' ' + pts.join(' ') + ' ' + (W - mr) + ',' + yAt(0).toFixed(1)) + '" style="fill:var(--accent)" opacity="0.10"/>';
-  const line = '<polyline points="' + pts.join(' ') + '" fill="none" style="stroke:var(--accent)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';
+  // 滑らかな曲線（Catmull-Rom→3次ベジェ。制御点をプロット域にクランプして下振れ防止）
+  const P = data.map((d, i) => [xAt(i), yAt(d.total)]);
+  const clampY = yy => Math.max(mt, Math.min(y0, yy));
+  const tn = 0.16;
+  let dPath = 'M' + P[0][0].toFixed(1) + ',' + P[0][1].toFixed(1);
+  for (let i = 0; i < P.length - 1; i++) {
+    const p0 = P[i - 1] || P[i], p1 = P[i], p2 = P[i + 1], p3 = P[i + 2] || P[i + 1];
+    const c1x = p1[0] + (p2[0] - p0[0]) * tn, c1y = clampY(p1[1] + (p2[1] - p0[1]) * tn);
+    const c2x = p2[0] - (p3[0] - p1[0]) * tn, c2y = clampY(p2[1] - (p3[1] - p1[1]) * tn);
+    dPath += 'C' + c1x.toFixed(1) + ',' + c1y.toFixed(1) + ' ' + c2x.toFixed(1) + ',' + c2y.toFixed(1) + ' ' + p2[0].toFixed(1) + ',' + p2[1].toFixed(1);
+  }
+  const areaPath = dPath + ' L' + (W - mr).toFixed(1) + ',' + y0.toFixed(1) + ' L' + ml.toFixed(1) + ',' + y0.toFixed(1) + ' Z';
 
-  let dots = '';
+  // グラデーション塗り＋ラインのドロップシャドウ
+  const defs = '<defs>' +
+    '<linearGradient id="fxArea" x1="0" y1="0" x2="0" y2="1">' +
+      '<stop offset="0" style="stop-color:var(--accent);stop-opacity:0.32"/>' +
+      '<stop offset="0.55" style="stop-color:var(--accent);stop-opacity:0.10"/>' +
+      '<stop offset="1" style="stop-color:var(--accent);stop-opacity:0.01"/>' +
+    '</linearGradient>' +
+    '<filter id="fxGlow" x="-15%" y="-45%" width="130%" height="190%">' +
+      '<feDropShadow dx="0" dy="3" stdDeviation="4.5" flood-color="#2a78d6" flood-opacity="0.30"/>' +
+    '</filter>' +
+  '</defs>';
+
+  const area = empty ? '' : '<path d="' + areaPath + '" fill="url(#fxArea)"/>';
+  const line = '<path d="' + dPath + '" fill="none" style="stroke:var(--accent)" stroke-width="2.75" stroke-linejoin="round" stroke-linecap="round"' + (empty ? '' : ' filter="url(#fxGlow)"') + '/>';
+
+  // ドット（非ゼロのみ・ピーク強調）＋値ラベル
+  let dots = '', labels = '';
   data.forEach((d, i) => {
     const x = xAt(i), y = yAt(d.total);
-    dots += '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="3.4" style="fill:var(--accent)"><title>' + esc(monthLabel(d.ym)) + '：' + yen(d.total) + '円（' + d.count + '件）</title></circle>';
-    if (d.total > 0) {
-      dots += '<text x="' + x.toFixed(1) + '" y="' + (y - 9).toFixed(1) + '" text-anchor="middle" style="fill:var(--text-secondary)" font-size="10" font-weight="600">' + yenShort(d.total) + '</text>';
+    const title = '<title>' + esc(monthLabel(d.ym)) + '：' + yen(d.total) + '円（' + d.count + '件）</title>';
+    if (d.total <= 0) {
+      dots += '<circle cx="' + x.toFixed(1) + '" cy="' + y0.toFixed(1) + '" r="2" style="fill:var(--line)">' + title + '</circle>';
+      return;
     }
+    const peak = d.total === rawMax;
+    if (peak) {
+      dots += '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="7" style="fill:var(--accent)" opacity="0.15"/>' +
+        '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="4.6" style="fill:var(--accent);stroke:var(--card)" stroke-width="2">' + title + '</circle>';
+    } else {
+      dots += '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="4" style="fill:var(--card);stroke:var(--accent)" stroke-width="2.25">' + title + '</circle>';
+    }
+    labels += '<text x="' + x.toFixed(1) + '" y="' + (y - 13).toFixed(1) + '" text-anchor="middle" style="fill:' + (peak ? 'var(--accent-ink)' : 'var(--text-secondary)') + '" font-size="10.5" font-weight="700">' + yenShort(d.total) + '</text>';
   });
 
   const note = empty ? '<text x="' + (W / 2) + '" y="' + (mt + ph / 2) + '" text-anchor="middle" style="fill:var(--text-muted)" font-size="13">この年度の登録はまだありません</text>' : '';
 
   const svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" preserveAspectRatio="xMidYMid meet" style="display:block;width:100%;height:auto" role="img" aria-label="月別 外注加工費 折れ線グラフ">' +
-    grid + area + line + dots + note + xlab + '</svg>';
+    defs + grid + area + line + dots + labels + note + xlab + '</svg>';
 
   const sub = (fy != null ? fy + '年度（' + fy + '年4月〜' + (fy + 1) + '年3月）／合計 ' + yen(fyTotal) + ' 円' : '');
   return panel('月別の外注加工費', sub, svg);
