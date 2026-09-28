@@ -489,6 +489,12 @@ const monthLabel = m => {
   if (!m || !/^\d{4}-\d{2}$/.test(m)) return m || '(未設定)';
   const p = m.split('-'); return p[0] + '年' + Number(p[1]) + '月';
 };
+// 会計年度（日本：4月始まり）。'YYYY-MM' → 年度の開始年（4〜12月はその年、1〜3月は前年）
+const fiscalYearOf = ym => {
+  if (!ym || !/^\d{4}-\d{2}$/.test(ym)) return null;
+  const [y, mo] = ym.split('-').map(Number);
+  return mo >= 4 ? y : y - 1;
+};
 const sum = rows => rows.reduce((a, r) => a + Number(r.amount || 0), 0);
 const isPaid = r => r.status === 'paid';
 const todayISO = () => {
@@ -545,8 +551,7 @@ function groupBy(rows, key) {
 }
 
 /* ========================= 部品 ========================= */
-function kpiHTML(rows) {
-  const vendors = new Set(rows.map(r => r.vendor || '(未設定)'));
+function kpiHTML(rows, all) {
   const label = state.month === 'ALL' ? '全期間' : monthLabel(state.month);
   const total = sum(rows);
   const paidRows = rows.filter(isPaid);
@@ -554,6 +559,14 @@ function kpiHTML(rows) {
   const unpaid = total - paid;
   const unpaidCount = rows.length - paidRows.length;
   const allDone = rows.length > 0 && unpaidCount === 0;
+  // 年度内合計（会計年度＝4月〜翌3月）：選択中の集計対象月が属する年度。全期間なら今日基準。
+  // 月フィルタに関係なく、全データ(all)からその年度分を集計する。
+  const now = new Date();
+  const baseYM = (state.month !== 'ALL') ? state.month
+    : (now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0'));
+  const fy = fiscalYearOf(baseYM);
+  const fyRows = (all || rows).filter(r => fiscalYearOf(r.pay_month) === fy);
+  const fyTotal = sum(fyRows);
   return '<div class="kpis">' +
     '<div class="kpi"><div class="label">' + esc(label) + 'の支払い合計</div>' +
       '<div class="value num">' + yen(total) + '<span class="unit">円</span></div>' +
@@ -565,9 +578,9 @@ function kpiHTML(rows) {
       (unpaid > 0 ? '● 未払' : '✓ 未払') + '</div>' +
       '<div class="value num">' + yen(unpaid) + '<span class="unit">円</span></div>' +
       '<div class="note">' + (allDone ? 'すべて支払い済み' : unpaidCount + '件が未払') + '</div></div>' +
-    '<div class="kpi"><div class="label">外注会社数</div>' +
-      '<div class="value num">' + vendors.size + '<span class="unit">社</span></div>' +
-      '<div class="note">' + esc(label) + 'の取引先</div></div>' +
+    '<div class="kpi"><div class="label">' + (fy != null ? fy + '年度の外注加工費合計' : '年度内の外注加工費合計') + '</div>' +
+      '<div class="value num">' + yen(fyTotal) + '<span class="unit">円</span></div>' +
+      '<div class="note">' + (fy != null ? '4月〜翌3月・' + fyRows.length + '件' : fyRows.length + '件') + '</div></div>' +
   '</div>';
 }
 
@@ -669,7 +682,7 @@ async function render() {
 
   const v = $('view');
   if (isData) { v.innerHTML = dataViewHTML(all); return; }
-  if (state.view === 'dash') { v.innerHTML = dashHTML(rows); return; }
+  if (state.view === 'dash') { v.innerHTML = dashHTML(rows, all); return; }
   if (!rows.length) { v.innerHTML = emptyHTML(); return; }
 
   if (state.view === 'list') {
@@ -683,13 +696,13 @@ async function render() {
   }
 }
 
-function dashHTML(rows) {
+function dashHTML(rows, all) {
   const total = sum(rows);
   const vendors = groupBy(rows, 'vendor').sort((a, b) => b.total - a.total);
   const jobs = groupBy(rows, 'job_name').sort((a, b) => b.total - a.total).slice(0, 8);
   const recent = rows.slice().sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || ''))).slice(0, 8);
 
-  return kpiHTML(rows) +
+  return kpiHTML(rows, all) +
     '<div class="cols2">' +
       panel('外注会社ごとの金額', vendors.length ? vendors.length + ' 社' : '', barsHTML(vendors, total)) +
       panel('業務ごとの金額', jobs.length ? '上位 ' + jobs.length + ' 件' : '', barsHTML(jobs, total)) +
