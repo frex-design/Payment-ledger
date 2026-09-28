@@ -696,6 +696,89 @@ async function render() {
   }
 }
 
+/* ---- 金額の短縮表記（軸・ラベル用） ---- */
+function yenShort(n) {
+  n = Number(n || 0);
+  const a = Math.abs(n);
+  if (a >= 1e8) { const v = n / 1e8; return (v >= 10 ? Math.round(v) : Math.round(v * 10) / 10) + '億'; }
+  if (a >= 1e4) { const v = n / 1e4; return (v >= 100 ? Math.round(v) : Math.round(v * 10) / 10) + '万'; }
+  return Math.round(n).toLocaleString('ja-JP');
+}
+/* ---- Y軸の上限を「キリの良い数」に丸める ---- */
+function niceCeil(x) {
+  if (!(x > 0)) return 0;
+  const mag = Math.pow(10, Math.floor(Math.log10(x)));
+  const n = x / mag;
+  const f = n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10;
+  return f * mag;
+}
+
+/* =========================================================================
+ *  月別 外注加工費 折れ線グラフ（会計年度＝4月〜翌3月・インラインSVG・依存なし）
+ *  年度の基準はKPIカードと同じ（選択中の集計対象月が属する年度／全期間は今日）。
+ *  月フィルタに関係なく、全データ(all)からその年度の12か月を集計する。
+ * ========================================================================= */
+function fyChartHTML(all) {
+  const now = new Date();
+  const baseYM = (state.month !== 'ALL') ? state.month
+    : (now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0'));
+  const fy = fiscalYearOf(baseYM);
+
+  const totalMap = new Map(), countMap = new Map();
+  (all || []).forEach(r => {
+    totalMap.set(r.pay_month, (totalMap.get(r.pay_month) || 0) + Number(r.amount || 0));
+    countMap.set(r.pay_month, (countMap.get(r.pay_month) || 0) + 1);
+  });
+  const data = [];
+  for (let i = 0; i < 12; i++) {
+    const mo = 4 + i, y = fy + (mo > 12 ? 1 : 0), m = ((mo - 1) % 12) + 1;
+    const ym = y + '-' + String(m).padStart(2, '0');
+    data.push({ ym: ym, m: m, total: totalMap.get(ym) || 0, count: countMap.get(ym) || 0 });
+  }
+  const rawMax = Math.max(0, ...data.map(d => d.total));
+  const empty = rawMax <= 0;
+  const niceMax = empty ? 1 : niceCeil(rawMax);
+  const fyTotal = data.reduce((a, d) => a + d.total, 0);
+
+  const W = 720, H = 260, ml = 60, mr = 18, mt = 18, mb = 30;
+  const pw = W - ml - mr, ph = H - mt - mb;
+  const xAt = i => ml + pw * i / 11;
+  const yAt = v => mt + ph * (1 - v / niceMax);
+
+  let grid = '';
+  (empty ? [0] : [0, niceMax / 2, niceMax]).forEach(v => {
+    const y = yAt(v);
+    grid += '<line x1="' + ml + '" y1="' + y.toFixed(1) + '" x2="' + (W - mr) + '" y2="' + y.toFixed(1) + '" style="stroke:var(--line)" stroke-width="1"/>' +
+      '<text x="' + (ml - 8) + '" y="' + (y + 4).toFixed(1) + '" text-anchor="end" style="fill:var(--text-muted)" font-size="11">' + yenShort(v) + '</text>';
+  });
+
+  let xlab = '';
+  data.forEach((d, i) => {
+    xlab += '<text x="' + xAt(i).toFixed(1) + '" y="' + (H - 10) + '" text-anchor="middle" style="fill:var(--text-muted)" font-size="11">' + d.m + '月</text>';
+  });
+
+  const pts = data.map((d, i) => xAt(i).toFixed(1) + ',' + yAt(d.total).toFixed(1));
+  const area = '<polygon points="' + (ml + ',' + yAt(0).toFixed(1) + ' ' + pts.join(' ') + ' ' + (W - mr) + ',' + yAt(0).toFixed(1)) + '" style="fill:var(--accent)" opacity="0.10"/>';
+  const line = '<polyline points="' + pts.join(' ') + '" fill="none" style="stroke:var(--accent)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';
+
+  let dots = '';
+  data.forEach((d, i) => {
+    const x = xAt(i), y = yAt(d.total);
+    dots += '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="3.4" style="fill:var(--accent)"><title>' + esc(monthLabel(d.ym)) + '：' + yen(d.total) + '円（' + d.count + '件）</title></circle>';
+    if (d.total > 0) {
+      dots += '<text x="' + x.toFixed(1) + '" y="' + (y - 9).toFixed(1) + '" text-anchor="middle" style="fill:var(--text-secondary)" font-size="10" font-weight="600">' + yenShort(d.total) + '</text>';
+    }
+  });
+
+  const note = empty ? '<text x="' + (W / 2) + '" y="' + (mt + ph / 2) + '" text-anchor="middle" style="fill:var(--text-muted)" font-size="13">この年度の登録はまだありません</text>' : '';
+
+  const svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" preserveAspectRatio="xMidYMid meet" style="display:block;width:100%;height:auto" role="img" aria-label="月別 外注加工費 折れ線グラフ">' +
+    grid + area + line + dots + note + xlab + '</svg>';
+
+  const sub = (fy != null ? fy + '年度（' + fy + '年4月〜' + (fy + 1) + '年3月）／合計 ' + yen(fyTotal) + ' 円' : '');
+  return panel('月別の外注加工費', sub, svg);
+}
+
 function dashHTML(rows, all) {
   const total = sum(rows);
   const vendors = groupBy(rows, 'vendor').sort((a, b) => b.total - a.total);
@@ -707,6 +790,7 @@ function dashHTML(rows, all) {
       panel('外注会社ごとの金額', vendors.length ? vendors.length + ' 社' : '', barsHTML(vendors, total)) +
       panel('業務ごとの金額', jobs.length ? '上位 ' + jobs.length + ' 件' : '', barsHTML(jobs, total)) +
     '</div>' +
+    fyChartHTML(all) +
     (recent.length
       ? panel('最近の登録', '新しい順', tableHTML(recent, { noActions: true }), { flush: true })
       : emptyHTML());
